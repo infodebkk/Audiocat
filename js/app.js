@@ -122,6 +122,31 @@ function applyGains() {
   else { el.video.volume = v; mainEl.volume = m; bgEl.volume = b; }
 }
 
+const AUDIO_MIME = { aac: 'audio/aac', m4a: 'audio/mp4', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac' };
+function audioBlob(file) {
+  if (file.type && file.type.startsWith('audio/')) return file;
+  const m = /\.([a-z0-9]+)$/i.exec(file.name || '');
+  const t = m && AUDIO_MIME[m[1].toLowerCase()];
+  return t ? new Blob([file], { type: t }) : file;
+}
+
+function bufToWav(buf) {
+  const ch = buf.numberOfChannels, n = buf.length, sr = buf.sampleRate;
+  const out = new DataView(new ArrayBuffer(44 + n * ch * 2));
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); out.setUint32(4, 36 + n * ch * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, ch, true);
+  out.setUint32(24, sr, true); out.setUint32(28, sr * ch * 2, true); out.setUint16(32, ch * 2, true); out.setUint16(34, 16, true);
+  w(36, 'data'); out.setUint32(40, n * ch * 2, true);
+  const data = Array.from({ length: ch }, (_, c) => buf.getChannelData(c));
+  let o = 44;
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) {
+    const v = Math.max(-1, Math.min(1, data[c][i]));
+    out.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true); o += 2;
+  }
+  return new Blob([out], { type: 'audio/wav' });
+}
+
 async function decodePeaks(file, buckets = 3000) {
   const ac = getAC();
   const buf = await ac.decodeAudioData(await file.arrayBuffer());
@@ -134,7 +159,7 @@ async function decodePeaks(file, buckets = 3000) {
     for (let j = i * per, e = Math.min(n, j + per); j < e; j += step) { const a = Math.abs(ch[j]); if (a > m) m = a; }
     out[i] = m;
   }
-  return { peaks: out, duration: buf.duration };
+  return { peaks: out, duration: buf.duration, buf };
 }
 
 /* ------------------------------------------------------------ file loading */
@@ -156,20 +181,28 @@ async function loadVideo(file) {
 async function loadAudio(kind, file) {
   const node = kind === 'main' ? mainEl : bgEl;
   revoke(kind);
-  const url = URL.createObjectURL(file);
+  const url = URL.createObjectURL(audioBlob(file));
   S.urls[kind] = url;
   node.src = url;
-  await once(node, 'loadedmetadata');
-  let dur = node.duration;
+  let nativeOk = true;
+  try { await once(node, 'loadedmetadata'); } catch { nativeOk = false; }
+  let dur = nativeOk ? node.duration : NaN;
   S.peaks[kind] = null;
   const dec = decodePeaks(file).then((r) => {
     S.peaks[kind] = r.peaks;
-    return r.duration;
+    return r;
   }).catch(() => null);
-  if (!isFinite(dur) || dur <= 0) {
-    const d = await dec;
-    if (!d) throw new Error('অডিও পড়া যায়নি');
-    dur = d;
+  if (!nativeOk || !isFinite(dur) || dur <= 0) {
+    // raw .aac (ADTS) প্রায়ই duration দেয় না / কিছু ব্রাউজার চালাতে পারে না → ডিকোড করে WAV প্রিভিউ বানাই
+    const r = await dec;
+    if (!r) throw new Error('অডিও পড়া যায়নি');
+    dur = r.duration;
+    if (!nativeOk || !isFinite(node.duration)) {
+      revoke(kind);
+      S.urls[kind] = URL.createObjectURL(bufToWav(r.buf));
+      node.src = S.urls[kind];
+      await once(node, 'loadedmetadata').catch(() => {});
+    }
   } else {
     dec.then(() => { if (S.editor) renderWaves(); });
   }
@@ -721,12 +754,13 @@ $('expStart').onclick = async () => {
     show('expDone');
   } catch (e) {
     console.error(e);
-    if (/বাতিল/.test(e.message) || /terminate/i.test(e.message)) {
+    const em = (e && e.message) || String(e);
+    if (/বাতিল/.test(em) || /terminate/i.test(em)) {
       show('expSetup'); toast('এক্সপোর্ট বন্ধ করা হয়েছে');
     } else {
-      $('expErrMsg').textContent = 'এক্সপোর্ট ব্যর্থ: ' + e.message;
-      $('expLog').textContent = e.log || '';
-      $('expLog').classList.toggle('hidden', !e.log);
+      $('expErrMsg').textContent = 'এক্সপোর্ট ব্যর্থ: ' + em;
+      $('expLog').textContent = (e && e.log) || '';
+      $('expLog').classList.toggle('hidden', !(e && e.log));
       show('expError');
     }
   }
