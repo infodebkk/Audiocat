@@ -126,7 +126,7 @@ async function logoToPng(img, wPx, opacity) {
  * hooks = { onProgress(0..1), onStatus(text) }
  * returns { blob, info }
  */
-export async function renderProject(job, hooks) {
+async function renderInner(job, hooks) {
   aborted = false;
   logBuf = [];
   const { onProgress, onStatus } = hooks;
@@ -308,5 +308,27 @@ export async function renderProject(job, hooks) {
   } finally {
     try { f.off('progress', progressCb); } catch (_) {}
     if (ff) for (const name of created) await del(name);
+  }
+}
+
+const errText = (e) => {
+  if (e == null) return '';
+  if (typeof e === 'string') return e;
+  if (e.message) return e.message;
+  if (e.reason) return errText(e.reason);
+  try { return e.type ? `event: ${e.type}` : JSON.stringify(e); } catch (_) { return String(e); }
+};
+
+/** FFmpeg worker কখনো Error নয়, সাধারণ স্ট্রিং/Event ছোড়ে — সব Error-এ রূপান্তর করে লগসহ ফেরত দেয়। */
+export async function renderProject(job, hooks) {
+  try {
+    return await renderInner(job, hooks);
+  } catch (e) {
+    const err = e instanceof Error && e.message ? e : new Error(errText(e) || 'অজানা ত্রুটি (সম্ভবত মেমোরি শেষ বা FFmpeg বন্ধ হয়ে গেছে)');
+    if (!err.log) err.log = logBuf.slice(-40).join('\n');
+    if (/memory|out of bounds|abort/i.test(err.message + err.log) && !/বাতিল/.test(err.message)) {
+      err.message += ' — মেমোরি কম হতে পারে; "ড্রাফট" কোয়ালিটি বা ছোট ভিডিও চেষ্টা করুন।';
+    }
+    throw err;
   }
 }
