@@ -44,9 +44,9 @@
       <div class="card" data-kind="main">
         <label class="drop" for="in-main">
           <span class="ic">🎵</span>
-          <span class="txt"><b>Main Audio <em class="req">বাধ্যতামূলক</em></b><small>MP3, WAV, M4A — এর দৈর্ঘ্যই ভিডিওর দৈর্ঘ্য</small></span>
+          <span class="txt"><b>Main Audio <em class="req">বাধ্যতামূলক</em></b><small>MP3, AAC, WAV, M4A — এর দৈর্ঘ্যই ভিডিওর দৈর্ঘ্য</small></span>
         </label>
-        <input id="in-main" type="file" accept="audio/*" hidden>
+        <input id="in-main" type="file" accept="audio/*,.aac,.m4a,.mp3,.wav,.ogg,.flac,.opus" hidden>
         <div class="meta" id="meta-main"></div>
         <div class="card-actions"><button class="mini danger hidden" data-remove="main">সরান</button></div>
       </div>
@@ -56,7 +56,7 @@
           <span class="ic">🎶</span>
           <span class="txt"><b>Background Audio <em class="opt">ঐচ্ছিক</em></b><small>ছোট হলে রিপিট, বড় হলে শেষে কাটা</small></span>
         </label>
-        <input id="in-bg" type="file" accept="audio/*" hidden>
+        <input id="in-bg" type="file" accept="audio/*,.aac,.m4a,.mp3,.wav,.ogg,.flac,.opus" hidden>
         <div class="meta" id="meta-bg"></div>
         <div class="card-actions"><button class="mini danger hidden" data-remove="bg">সরান</button></div>
       </div>
